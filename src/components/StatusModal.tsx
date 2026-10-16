@@ -103,6 +103,24 @@ export const StatusModal: React.FC<StatusModalProps> = ({
                   {stats.score}
                 </div>
               </div>
+
+              <div className="bg-slate-800/80 rounded-2xl p-3 border border-white/10">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  MONSTERS 击败小怪物
+                </div>
+                <div className="text-xl font-black text-violet-300 font-mono tabular-nums">
+                  {stats.monstersDefeated ?? 0} <span className="text-xs text-slate-400">只</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-800/80 rounded-2xl p-3 border border-white/10">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  BEST COMBO 最高连击
+                </div>
+                <div className="text-xl font-black text-emerald-300 font-mono tabular-nums">
+                  x{stats.bestCombo ?? 0}
+                </div>
+              </div>
             </div>
 
             {/* Actions */}
@@ -161,7 +179,7 @@ export const StatusModal: React.FC<StatusModalProps> = ({
               OUT OF ENERGY
             </div>
             <p className="text-xs text-slate-300 mb-6">
-              不小心跌入深海或触碰了尖刺海胆，深呼吸后再次启程吧！
+              不小心跌入深海、撞上尖刺海胆，或是被小怪物撞疼了。深呼吸后再次启程吧！
             </p>
 
             <div className="bg-slate-800/80 rounded-2xl p-4 border border-white/10 w-full mb-6 flex justify-around">
@@ -173,6 +191,11 @@ export const StatusModal: React.FC<StatusModalProps> = ({
               <div>
                 <div className="text-[10px] text-slate-400 font-bold uppercase">TIME 时长</div>
                 <div className="text-xl font-bold text-slate-200 font-mono">{stats.timeSpent.toFixed(0)}s</div>
+              </div>
+              <div className="w-px bg-white/10" />
+              <div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">MONSTERS 击败</div>
+                <div className="text-xl font-bold text-violet-300 font-mono">{stats.monstersDefeated ?? 0}</div>
               </div>
             </div>
 

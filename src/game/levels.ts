@@ -154,6 +154,19 @@ function createBeachLevel(): LevelData {
       { id: 'bird2', type: 'bird', x: 1800, y: 140, initialX: 1800, vx: 60, range: 250, facing: 1, animFrame: 0 },
       { id: 'fish1', type: 'fish', x: 500, y: 670, initialX: 500, vx: 30, range: 80, facing: 1, animFrame: 0 },
     ],
+    monsters: [
+      // 沙滩上的小螃蟹，贴着沙丘左右巡逻
+      { kind: 'crabling', x: 860, y: 494, patrolRange: 70, variant: 0 },
+      { kind: 'crabling', x: 1150, y: 434, patrolRange: 130, variant: 0, phase: 0.6 },
+      { kind: 'crabling', x: 2260, y: 514, patrolRange: 85, variant: 0, phase: 1.2 },
+      // 空中飘的果冻水母
+      { kind: 'jellybub', x: 1640, y: 300, variant: 0, phase: 0.3 },
+      { kind: 'jellybub', x: 2350, y: 250, variant: 0, phase: 1.1 },
+      // 沙丘上的花苞炮手
+      { kind: 'budling', x: 930, y: 484, variant: 0 },
+      // 祭坛守卫 Boss
+      { kind: 'crabking', x: 2600, y: 530, variant: 0 },
+    ],
   };
 }
 
@@ -246,6 +259,20 @@ function createJungleLevel(): LevelData {
       { id: 'bf3', type: 'butterfly', x: 2150, y: 380, initialX: 2150, vx: 30, range: 60, facing: 1, animFrame: 0 },
       { id: 'jbird1', type: 'bird', x: 1200, y: 120, initialX: 1200, vx: 50, range: 180, facing: 1, animFrame: 0 },
     ],
+    monsters: [
+      // 林间蘑菇小妖
+      { kind: 'shroomling', x: 220, y: 616, patrolRange: 95, variant: 1 },
+      { kind: 'shroomling', x: 1850, y: 586, patrolRange: 110, variant: 1, phase: 0.8 },
+      { kind: 'shroomling', x: 2960, y: 526, patrolRange: 130, variant: 1, phase: 1.5 },
+      // 高台上的花苞炮手
+      { kind: 'budling', x: 500, y: 444, variant: 1 },
+      { kind: 'budling', x: 2150, y: 404, variant: 1 },
+      // 瀑布边飘荡的荧光水母
+      { kind: 'jellybub', x: 980, y: 300, variant: 1, phase: 0.5 },
+      { kind: 'jellybub', x: 2480, y: 250, variant: 1, phase: 1.4 },
+      // 古树祭坛守卫 Boss
+      { kind: 'shroomlord', x: 3150, y: 482, variant: 1 },
+    ],
   };
 }
 
@@ -335,6 +362,20 @@ function createSunsetLevel(): LevelData {
       { id: 'ff1', type: 'bird', x: 500, y: 150, initialX: 500, vx: 45, range: 180, facing: 1, animFrame: 0 },
       { id: 'ff2', type: 'bird', x: 2100, y: 120, initialX: 2100, vx: 50, range: 220, facing: 1, animFrame: 0 },
       { id: 'scrab1', type: 'crab', x: 2820, y: 562, initialX: 2820, vx: 18, range: 60, facing: 1, animFrame: 0 },
+    ],
+    monsters: [
+      // 水晶海崖上的火苗犬（会冲锋）
+      { kind: 'emberpup', x: 480, y: 508, patrolRange: 55, variant: 2 },
+      { kind: 'emberpup', x: 3180, y: 488, patrolRange: 150, variant: 2, phase: 0.9 },
+      // 洞穴里的花苞炮手
+      { kind: 'budling', x: 1550, y: 464, variant: 2 },
+      // 晚霞中俯冲的晶石小灵
+      { kind: 'crystimp', x: 1080, y: 200, variant: 2, phase: 0.4 },
+      { kind: 'crystimp', x: 2400, y: 300, variant: 2, phase: 1.3 },
+      // 深海萤光水母
+      { kind: 'jellybub', x: 1900, y: 250, variant: 2, phase: 0.7 },
+      // 神殿前的终极 Boss
+      { kind: 'crystalsphinx', x: 3280, y: 446, variant: 2 },
     ],
   };
 }

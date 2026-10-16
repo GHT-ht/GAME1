@@ -1,12 +1,14 @@
 import React from 'react';
-import type { PlayerState, BiomeConfig } from '../game/types.ts';
+import type { PlayerState, BiomeConfig, CombatSnapshot } from '../game/types.ts';
 import { getWeatherLabel, type WeatherState } from '../game/weather.ts';
-import { Volume2, VolumeX, Pause, RotateCcw, Compass, CloudSun } from 'lucide-react';
+import { comboTier } from '../game/monsters.ts';
+import { Volume2, VolumeX, Pause, RotateCcw, Compass, Swords, Heart, Skull } from 'lucide-react';
 
 interface HUDProps {
   player: PlayerState;
   biome: BiomeConfig;
   weather?: WeatherState;
+  combat?: CombatSnapshot;
   targetPearls: number;
   timeSpent: number;
   isMuted: boolean;
@@ -21,6 +23,7 @@ export const HUD: React.FC<HUDProps> = ({
   player,
   biome,
   weather,
+  combat,
   targetPearls,
   timeSpent,
   isMuted,
@@ -40,6 +43,31 @@ export const HUD: React.FC<HUDProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-3 sm:p-6 select-none font-sans">
+      {/* Boss health bar — appears while a stage guardian is alive */}
+      {combat && combat.bossActive && combat.bossMaxHp > 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-24 sm:top-28 -translate-x-1/2 w-[85vw] max-w-2xl">
+          <div className="flex items-end justify-between px-1 mb-1">
+            <span className="text-xs sm:text-sm font-black text-rose-200 drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)] tracking-wide">
+              👑 {combat.bossName}
+            </span>
+            <span className="text-[10px] sm:text-xs font-black text-rose-300/90 font-mono tabular-nums drop-shadow">
+              {combat.bossHp} / {combat.bossMaxHp}
+            </span>
+          </div>
+          <div className="h-3.5 sm:h-4 w-full rounded-full bg-slate-950/85 border-2 border-rose-400/60 shadow-[0_0_20px_rgba(244,63,94,0.5)] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-rose-500 via-red-400 to-amber-300 transition-all duration-200"
+              style={{ width: `${Math.max(0, (combat.bossHp / combat.bossMaxHp) * 100)}%` }}
+            />
+          </div>
+          {combat.bossTaunt && (
+            <div className="mt-1 text-center text-[10px] sm:text-[11px] font-bold text-amber-200/90 drop-shadow">
+              「{combat.bossTaunt}」 · 冲刺与踩头可以破防，蓄力时它会变硬！
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Top Header Bar */}
       <header className="flex items-start justify-between gap-2 flex-wrap">
         {/* Left: Biome Info + Health */}
@@ -157,6 +185,64 @@ export const HUD: React.FC<HUDProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Player HP bar + monster combat readout */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Smooth HP bar for precise health reading */}
+            <div className="bg-slate-900/85 px-3 py-1.5 rounded-2xl border border-rose-400/30 shadow-lg w-40 sm:w-48">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-1">
+                <span className="text-rose-300 flex items-center gap-1">
+                  <Heart className="w-3 h-3 fill-current" /> 生命 HP
+                </span>
+                <span className="text-white font-mono tabular-nums">
+                  {player.health}/{player.maxHealth}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden border border-white/10">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    player.health <= 1
+                      ? 'bg-gradient-to-r from-rose-500 to-red-400 animate-pulse'
+                      : 'bg-gradient-to-r from-rose-400 to-amber-300'
+                  }`}
+                  style={{ width: `${Math.max(0, (player.health / Math.max(1, player.maxHealth)) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Cute monster counter */}
+            {combat && (
+              <div
+                className="flex items-center gap-1.5 bg-slate-900/85 px-3 py-1.5 rounded-2xl border border-violet-400/30 shadow-lg text-[10px] font-black"
+                title="本关剩余小怪物 / 已击败数量"
+              >
+                <Skull className="w-3.5 h-3.5 text-violet-300" />
+                <span className="text-violet-300 uppercase tracking-wider">怪物</span>
+                <span className="text-white font-mono tabular-nums">
+                  {combat.remaining}
+                  <span className="text-slate-400 font-normal">/{combat.total}</span>
+                </span>
+                <span className="w-px h-3 bg-white/20" />
+                <span className="text-emerald-300 font-mono tabular-nums">击败 {combat.defeated}</span>
+              </div>
+            )}
+
+            {/* Combo meter */}
+            {combat && combat.combo >= 2 && (
+              <div
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border shadow-lg text-[11px] font-black animate-pulse"
+                style={{
+                  borderColor: comboTier(combat.combo).color,
+                  color: comboTier(combat.combo).color,
+                  background: 'rgba(2, 6, 23, 0.85)',
+                }}
+              >
+                <Swords className="w-3.5 h-3.5" />
+                <span className="font-mono tabular-nums">x{combat.combo}</span>
+                <span className="tracking-wider">{comboTier(combat.combo).label}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Center: Live Pearls & Fruit Collectibles */}
@@ -249,10 +335,16 @@ export const HUD: React.FC<HUDProps> = ({
           <span>·</span>
           <span><kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">Shift</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">X</kbd> Air Dash (空中连冲)</span>
           <span>·</span>
+          <span className="text-emerald-300 font-bold"><kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">F</kbd> 挥叶斩 (三连击第三下是回旋斩)</span>
+          <span>·</span>
+          <span className="text-violet-300 font-bold">👾 踩头 / 冲刺 / 挥击都能打小怪物，击败会掉珍珠和爱心</span>
+          <span>·</span>
           <span className="text-amber-300 font-bold">⬆️ Booster 助力跳台 (踩上自动起跳/跳跃大冲刺)</span>
         </div>
         <div className="text-right ml-auto text-[11px] sm:text-xs text-amber-300 font-bold bg-slate-950/70 px-3 py-1.5 rounded-full border border-amber-400/30">
-          Reach Ancient Altar 激活远古祭坛 🗿
+          {combat && combat.bossActive
+            ? `⚠️ 守关 Boss「${combat.bossName}」已出现，击败它可拿珍珠与爱心 👑`
+            : 'Reach Ancient Altar 激活远古祭坛 🗿'}
         </div>
       </footer>
     </div>

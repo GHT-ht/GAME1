@@ -55,6 +55,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
         <p className="text-sm text-slate-100 max-w-md drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] mb-6 leading-relaxed bg-slate-950/40 p-2.5 rounded-xl border border-white/10">
           漫步于清澈蔚蓝的热带沙滩，采摘椰果、寻觅深海珍珠，乘着巨大棕榈叶御风滑翔，唤醒沉睡的远古海神图腾！
+          <br />
+          <span className="text-violet-200">
+            沿途会遇到超可爱的果冻水母、沙沙蟹、蘑菇小妖……用踩头、冲刺和挥叶斩把挡路的它们变成珍珠与爱心吧！
+          </span>
         </p>
 
         {/* Biome Selection Cards */}
@@ -110,8 +114,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       </div>
 
       {/* Control Hint Line */}
-      <div className="text-xs text-slate-200 font-medium px-4 py-2 rounded-full bg-slate-950/70 border border-white/10 shadow-lg drop-shadow">
-        🎮 A/D 或 方向键移动 · Space 跳跃与滑翔 · Shift 冲刺 · P 暂停 · M 静音
+      <div className="text-xs text-slate-200 font-medium px-4 py-2 rounded-full bg-slate-950/70 border border-white/10 shadow-lg drop-shadow text-center">
+        🎮 A/D 或 方向键移动 · Space 跳跃与滑翔 · Shift 冲刺 · <span className="text-emerald-300 font-bold">F 挥叶斩</span> · 踩头 / 冲刺 / 挥击打小怪物 · P 暂停 · M 静音
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { GameEngine } from './game/engine.ts';
-import type { GameState, BiomeId, PlayerState, RunStats } from './game/types.ts';
+import type { GameState, BiomeId, PlayerState, RunStats, CombatSnapshot } from './game/types.ts';
 import type { WeatherState } from './game/weather.ts';
 import { BIOMES } from './game/levels.ts';
 import { HUD } from './components/HUD.tsx';
@@ -18,6 +18,7 @@ export default function App() {
   const [playerState, setPlayerState] = useState<PlayerState | null>(null);
   const [weatherState, setWeatherState] = useState<WeatherState | null>(null);
   const [runStats, setRunStats] = useState<RunStats | null>(null);
+  const [combat, setCombat] = useState<CombatSnapshot | null>(null);
   const [timeSpent, setTimeSpent] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
@@ -31,13 +32,13 @@ export default function App() {
       onStatsReady: (stats) => setRunStats(stats),
       onTimeUpdate: (sec) => setTimeSpent(sec),
       onWeatherUpdate: (w) => setWeatherState({ ...w }),
+      onCombatUpdate: (c) => setCombat({ ...c }),
     });
 
     engineRef.current = engine;
     setPlayerState({ ...engine.player });
     setWeatherState({ ...engine.weather });
     engine.start();
-
     // Check ?autostart=1
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
@@ -116,6 +117,7 @@ export default function App() {
           player={playerState}
           biome={BIOMES[currentBiome]}
           weather={weatherState || undefined}
+          combat={combat || undefined}
           targetPearls={engineRef.current?.level.targetPearls || 15}
           timeSpent={timeSpent}
           isMuted={isMuted}
@@ -137,6 +139,7 @@ export default function App() {
           onJumpDown={() => engineRef.current?.setMobileJump(true)}
           onJumpUp={() => engineRef.current?.setMobileJump(false)}
           onDash={() => engineRef.current?.setMobileDash()}
+          onAttack={() => engineRef.current?.setMobileAttack()}
         />
       )}
 

@@ -1,4 +1,14 @@
-import type { GameState, BiomeId, PlayerState, LevelData, RunStats } from './types.ts';
+import type {
+  GameState,
+  BiomeId,
+  PlayerState,
+  LevelData,
+  RunStats,
+  Monster,
+  MonsterProjectile,
+  DamageNumber,
+  CombatSnapshot,
+} from './types.ts';
 import { BIOMES, getLevelData } from './levels.ts';
 import {
   createInitialPlayer,
@@ -7,6 +17,17 @@ import {
   rectIntersect,
   type InputState,
 } from './physics.ts';
+import {
+  updateMonsters,
+  createMonsters,
+  createProjectilePool,
+  createDamageNumberPool,
+  buildMonsterLoot,
+  monsterScore,
+  comboBonus,
+  MONSTER_SPECIES,
+  buildCombatSnapshot,
+} from './monsters.ts';
 import { ParticlePool } from './particles.ts';
 import { GameRenderer } from './renderer.ts';
 import { sound } from './audio.ts';
@@ -23,6 +44,7 @@ export interface GameEngineCallbacks {
   onStatsReady: (stats: RunStats) => void;
   onTimeUpdate: (seconds: number) => void;
   onWeatherUpdate?: (weather: WeatherState) => void;
+  onCombatUpdate?: (combat: CombatSnapshot) => void;
 }
 
 export class GameEngine {
@@ -37,6 +59,9 @@ export class GameEngine {
   public level: LevelData;
   public player: PlayerState;
   public weather: WeatherState;
+  public monsters: Monster[] = [];
+  public projectiles: MonsterProjectile[] = createProjectilePool();
+  public damageNumbers: DamageNumber[] = createDamageNumberPool();
 
   private cameraX: number = 0;
   private cameraY: number = 0;
@@ -47,6 +72,14 @@ export class GameEngine {
   private lastTime: number = 0;
   private rafId: number | null = null;
   private secondTimer: number = 0;
+  private combatTimer: number = 0;
+
+  // Juice: hit-stop + screen shake
+  private hitStop: number = 0;
+  private shakeTime: number = 0;
+  private shakeDuration: number = 1;
+  private shakeMagnitude: number = 0;
+  private shakeSeed: number = 0;
 
   private input: InputState = {
     left: false,
@@ -54,6 +87,7 @@ export class GameEngine {
     jumpJustPressed: false,
     jumpHeld: false,
     dashJustPressed: false,
+    attackJustPressed: false,
     down: false,
   };
 
@@ -72,9 +106,45 @@ export class GameEngine {
     this.level = getLevelData(this.currentBiome);
     this.player = createInitialPlayer(this.level.spawnPoint.x, this.level.spawnPoint.y);
     this.weather = createWeatherState(this.currentBiome);
+    this.monsters = createMonsters(this.level);
+    this.clearProjectiles();
 
     this.handleResize();
     this.bindEvents();
+  }
+
+  private clearProjectiles() {
+    for (const p of this.projectiles) p.active = false;
+    for (const d of this.damageNumbers) d.active = false;
+  }
+
+  private resetCombat() {
+    this.monsters = createMonsters(this.level);
+    this.clearProjectiles();
+    this.hitStop = 0;
+    this.shakeTime = 0;
+    this.shakeMagnitude = 0;
+    this.combatTimer = 0;
+    this.emitCombat();
+  }
+
+  private addShake(strength: number) {
+    if (strength <= 0) return;
+    this.shakeMagnitude = Math.max(this.shakeMagnitude, Math.min(22, strength * 16));
+    this.shakeDuration = Math.max(this.shakeDuration, 0.22 + strength * 0.25);
+    this.shakeTime = this.shakeDuration;
+  }
+
+  private addHitStop(seconds: number) {
+    this.hitStop = Math.max(this.hitStop, Math.min(0.12, seconds));
+  }
+
+  private emitCombat() {
+    if (!this.callbacks.onCombatUpdate) return;
+    const best = Math.max(this.player.bestCombo, this.player.comboCount);
+    this.callbacks.onCombatUpdate(
+      buildCombatSnapshot(this.monsters, this.player, best, this.player.heartsCollected)
+    );
   }
 
   private handleResize = () => {
@@ -158,6 +228,9 @@ export class GameEngine {
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyK' || e.code === 'KeyX' || e.code === 'KeyJ') {
         this.input.dashJustPressed = true;
       }
+      if (e.code === 'KeyF' || e.code === 'KeyE') {
+        this.input.attackJustPressed = true;
+      }
       if (e.code === 'KeyP' || e.code === 'Escape') {
         if (this.state === 'playing') {
           this.pauseGame();
@@ -207,6 +280,7 @@ export class GameEngine {
       this.input.jumpHeld = false;
       this.input.jumpJustPressed = false;
       this.input.dashJustPressed = false;
+      this.input.attackJustPressed = false;
     });
   }
 
@@ -230,6 +304,9 @@ export class GameEngine {
   public setMobileDash() {
     this.input.dashJustPressed = true;
   }
+  public setMobileAttack() {
+    this.input.attackJustPressed = true;
+  }
 
   public setBiome(biomeId: BiomeId) {
     this.currentBiome = biomeId;
@@ -240,6 +317,7 @@ export class GameEngine {
     this.cameraY = this.player.y - this.viewportH * 0.6;
     this.particles.clear();
     this.timeSpent = 0;
+    this.resetCombat();
     this.callbacks.onPlayerUpdate(this.player);
     this.callbacks.onWeatherUpdate?.(this.weather);
   }
@@ -261,6 +339,7 @@ export class GameEngine {
     this.canvas.focus();
     window.focus();
     sound.startBGM(BIOMES[this.currentBiome].musicTheme);
+    this.emitCombat();
   }
 
   public pauseGame() {
@@ -281,6 +360,7 @@ export class GameEngine {
     this.particles.clear();
     this.timeSpent = 0;
     this.secondTimer = 0;
+    this.resetCombat();
     this.startGame();
   }
 
@@ -320,6 +400,13 @@ export class GameEngine {
   private tick(dt: number, timeSeconds: number) {
     const biome = BIOMES[this.currentBiome];
 
+    // Hit-stop: briefly slow the simulation for crunchy impact feedback
+    let simDt = dt;
+    if (this.hitStop > 0) {
+      this.hitStop = Math.max(0, this.hitStop - dt);
+      simDt = dt * 0.18;
+    }
+
     if (this.state === 'playing') {
       this.timeSpent += dt;
       this.secondTimer += dt;
@@ -327,6 +414,11 @@ export class GameEngine {
         this.secondTimer = 0;
         this.callbacks.onTimeUpdate(this.timeSpent);
         this.callbacks.onPlayerUpdate(this.player);
+      }
+      this.combatTimer += dt;
+      if (this.combatTimer >= 0.1) {
+        this.combatTimer = 0;
+        this.emitCombat();
       }
 
       // Physics update
@@ -336,11 +428,25 @@ export class GameEngine {
         this.level.platforms,
         this.level.collectibles,
         this.level.hazards,
-        dt,
+        simDt,
         this.level.worldWidth,
         this.level.worldHeight
       );
       this.player = player;
+
+      if (events.slashed) {
+        sound.playSlash(events.spinAttack);
+        this.particles.emitDashContrail(
+          player.x + player.w * 0.5,
+          player.y + player.h * 0.5,
+          player.facing,
+          events.spinAttack ? 3 : 1
+        );
+      }
+      if (events.healed) {
+        sound.playHeartPickup();
+        this.particles.emitSparkles(player.x + player.w * 0.5, player.y + player.h * 0.5, 12, '#fb7185');
+      }
 
       // Handle sound & particle reactions
       if (events.jumped) {
@@ -385,9 +491,94 @@ export class GameEngine {
         } else if (item.type === 'sun_coin' || item.type === 'totem_relic') {
           sound.playTotemActivate();
           this.particles.emitSparkles(item.x + 15, item.y + 15, 16, '#facc15');
+        } else if (item.type === 'heart') {
+          sound.playHeartPickup();
+          this.particles.emitSparkles(item.x + 11, item.y + 11, 10, '#fb7185');
         }
         this.callbacks.onPlayerUpdate(this.player);
       }
+
+      // ---------------------------------------------------------------------
+      // Cute monster combat resolution
+      // ---------------------------------------------------------------------
+      const combat = updateMonsters(
+        this.monsters,
+        this.projectiles,
+        this.damageNumbers,
+        this.player,
+        this.level,
+        simDt
+      );
+
+      if (combat.playerHurt) {
+        sound.playHurt();
+        this.particles.emitSparkles(
+          this.player.x + this.player.w * 0.5,
+          this.player.y + this.player.h * 0.5,
+          12,
+          '#ef4444'
+        );
+        this.addShake(0.45);
+        this.addHitStop(0.07);
+        this.callbacks.onPlayerUpdate(this.player);
+      }
+
+      for (const hit of combat.monstersHit) {
+        if (hit.defeated) continue;
+        sound.playMonsterHurt();
+        this.particles.emitSparkles(hit.x + hit.w * 0.5, hit.y + hit.h * 0.5, 6, '#fef08a');
+      }
+
+      if (combat.stomped) {
+        sound.playStomp();
+        this.particles.emitDust(this.player.x + this.player.w * 0.5, this.player.y + this.player.h, 6);
+      }
+
+      for (const defeated of combat.monstersDefeated) {
+        const species = MONSTER_SPECIES[defeated.kind];
+        sound.playMonsterDefeat(species.isBoss);
+        this.particles.emitSparkles(
+          defeated.x + defeated.w * 0.5,
+          defeated.y + defeated.h * 0.5,
+          species.isBoss ? 34 : 16,
+          species.isBoss ? '#fda4af' : '#fcd34d'
+        );
+        this.particles.emitDust(defeated.x + defeated.w * 0.5, defeated.y + defeated.h, species.isBoss ? 12 : 6);
+
+        if (defeated.lastHitBy !== 'none') {
+          this.player.monstersDefeated += 1;
+          const loot = buildMonsterLoot(defeated, this.player);
+          for (const drop of loot) this.level.collectibles.push(drop);
+          this.addShake(species.isBoss ? 0.8 : 0.22);
+          this.addHitStop(species.isBoss ? 0.12 : 0.05);
+        }
+        this.emitCombat();
+      }
+
+      if (combat.bossSummoned.length > 0) {
+        for (const minion of combat.bossSummoned) {
+          this.particles.emitSparkles(minion.x + minion.w * 0.5, minion.y + minion.h * 0.5, 8, '#c084fc');
+        }
+      }
+      if (combat.bossSlammed) {
+        this.addShake(0.7);
+        this.addHitStop(0.06);
+        this.particles.emitDust(combat.slamX, combat.slamY, 10);
+      }
+      if (combat.bossEnraged) {
+        sound.playBossRoar();
+        this.addShake(0.75);
+      }
+      if (combat.projectilesFired > 0) {
+        sound.playProjectile();
+      }
+      if (combat.comboUp) {
+        this.player.bestCombo = Math.max(this.player.bestCombo, this.player.comboCount);
+        if (this.player.comboCount >= 3) sound.playComboUp(this.player.comboCount);
+        this.callbacks.onPlayerUpdate(this.player);
+      }
+      if (combat.hitStop > 0) this.addHitStop(combat.hitStop);
+      if (combat.shake > 0) this.addShake(combat.shake);
 
       // Check Victory Condition: Totem Altar reached
       const playerBox = { x: player.x, y: player.y, w: player.w, h: player.h };
@@ -406,7 +597,9 @@ export class GameEngine {
           this.timeSpent,
           player.pearls,
           this.level.targetPearls,
-          player.relicsFound > 0
+          player.relicsFound > 0,
+          monsterScore(this.monsters),
+          player.bestCombo
         );
 
         const stats: RunStats = {
@@ -417,6 +610,9 @@ export class GameEngine {
           relicFound: player.relicsFound > 0,
           stars,
           score,
+          monstersDefeated: player.monstersDefeated,
+          bestCombo: player.bestCombo,
+          heartsCollected: player.heartsCollected,
         };
 
         this.state = 'victory';
@@ -437,7 +633,10 @@ export class GameEngine {
           totalPearls: this.level.targetPearls,
           relicFound: player.relicsFound > 0,
           stars: 0,
-          score: player.pearls * 50,
+          score: player.pearls * 50 + monsterScore(this.monsters) + comboBonus(player.bestCombo),
+          monstersDefeated: player.monstersDefeated,
+          bestCombo: player.bestCombo,
+          heartsCollected: player.heartsCollected,
         };
         this.callbacks.onStatsReady(stats);
         this.callbacks.onStateChange('gameover');
@@ -462,10 +661,24 @@ export class GameEngine {
     // Reset single-frame edge triggers
     this.input.jumpJustPressed = false;
     this.input.dashJustPressed = false;
+    this.input.attackJustPressed = false;
 
     // Update Particles & Dynamic Weather
     this.particles.update(dt);
     updateWeather(this.weather, this.currentBiome, dt, this.viewportW, this.viewportH);
+
+    // Screen shake (decaying, cheap trig noise)
+    this.shakeSeed += dt * 60;
+    let shakeX = 0;
+    let shakeY = 0;
+    if (this.shakeTime > 0) {
+      this.shakeTime = Math.max(0, this.shakeTime - dt);
+      const falloff = this.shakeTime / this.shakeDuration;
+      const amp = this.shakeMagnitude * falloff * falloff;
+      shakeX = Math.sin(this.shakeSeed * 1.7) * amp;
+      shakeY = Math.cos(this.shakeSeed * 2.3) * amp * 0.7;
+      if (this.shakeTime === 0) this.shakeMagnitude = 0;
+    }
 
     // Render Scene with safety catch
     try {
@@ -475,11 +688,16 @@ export class GameEngine {
         this.player,
         this.particles,
         this.weather,
-        this.cameraX,
-        this.cameraY,
+        this.cameraX + shakeX,
+        this.cameraY + shakeY,
         this.viewportW,
         this.viewportH,
-        timeSeconds
+        timeSeconds,
+        {
+          monsters: this.monsters,
+          projectiles: this.projectiles,
+          damageNumbers: this.damageNumbers,
+        }
       );
     } catch (err) {
       console.warn('Render frame warning:', err);

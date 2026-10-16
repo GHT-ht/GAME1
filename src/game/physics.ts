@@ -22,6 +22,12 @@ export const COYOTE_TIME = 0.12; // seconds
 export const JUMP_BUFFER_TIME = 0.12; // seconds
 export const INVULNERABLE_TIME = 1.2; // seconds
 
+// --- Cute monster combat: player melee swing -------------------------------
+export const SLASH_DURATION = 0.18; // seconds the hitbox stays active
+export const SLASH_COOLDOWN = 0.3; // seconds between swings
+export const SPIN_SWING_INDEX = 2; // 3rd swing of the combo is a full spin
+export const COMBO_WINDOW = 2.5; // seconds a landed-hit combo survives
+
 export function createInitialPlayer(spawnX: number, spawnY: number): PlayerState {
   return {
     x: spawnX,
@@ -51,6 +57,16 @@ export function createInitialPlayer(spawnX: number, spawnY: number): PlayerState
     fruits: 0,
     sunCoins: 0,
     relicsFound: 0,
+    attackTimer: 0,
+    attackCooldown: 0,
+    // -1 means "no swing yet", so the very first press becomes swing 0
+    attackIndex: -1,
+    comboCount: 0,
+    comboTimer: 0,
+    stompChain: 0,
+    monstersDefeated: 0,
+    heartsCollected: 0,
+    bestCombo: 0,
     walkCycle: 0,
     squashX: 1,
     squashY: 1,
@@ -58,6 +74,33 @@ export function createInitialPlayer(spawnX: number, spawnY: number): PlayerState
     lastSafeX: spawnX,
     lastSafeY: spawnY,
   };
+}
+
+/**
+ * Advances the player melee combo state machine.
+ * The 3rd consecutive swing becomes a full spinning palm-leaf attack that
+ * covers both sides of the player (handled by the hitbox in monsters.ts).
+ */
+export function updatePlayerAttack(
+  player: PlayerState,
+  input: InputState,
+  dt: number
+): { slashed: boolean; spin: boolean; swingIndex: number } {
+  if (player.attackCooldown > 0) player.attackCooldown = Math.max(0, player.attackCooldown - dt);
+  if (player.attackTimer > 0) player.attackTimer = Math.max(0, player.attackTimer - dt);
+
+  let slashed = false;
+  if (input.attackJustPressed && player.attackCooldown <= 0 && player.attackTimer <= 0) {
+    player.attackTimer = SLASH_DURATION;
+    player.attackCooldown = SLASH_COOLDOWN;
+    // -1 (no swing yet) -> 0 (first) -> 1 (second) -> 2 (spin) -> 0 ...
+    player.attackIndex = (player.attackIndex + 1) % 3;
+    slashed = true;
+    player.squashX = player.attackIndex === SPIN_SWING_INDEX ? 1.2 : 1.1;
+    player.squashY = player.attackIndex === SPIN_SWING_INDEX ? 0.9 : 0.95;
+  }
+
+  return { slashed, spin: player.attackIndex === SPIN_SWING_INDEX, swingIndex: player.attackIndex };
 }
 
 export function rectIntersect(r1: Rect, r2: Rect): boolean {
@@ -77,6 +120,7 @@ export interface InputState {
   jumpJustPressed: boolean;
   jumpHeld: boolean;
   dashJustPressed: boolean;
+  attackJustPressed?: boolean;
 }
 
 export interface PhysicsEvents {
@@ -92,6 +136,14 @@ export interface PhysicsEvents {
   hurt: boolean;
   collectedItem?: Collectible;
   waterHit: boolean;
+  /** A new melee swing started this frame. */
+  slashed: boolean;
+  /** The swing was the 3rd combo spin attack. */
+  spinAttack: boolean;
+  /** Index of the swing that started (0-2). */
+  swingIndex: number;
+  /** HP restored by a dropped heart. */
+  healed: boolean;
 }
 
 export function updatePlayerPhysics(
@@ -116,14 +168,27 @@ export function updatePlayerPhysics(
     glidingStarted: false,
     hurt: false,
     waterHit: false,
+    slashed: false,
+    spinAttack: false,
+    swingIndex: player.attackIndex ?? 0,
+    healed: false,
   };
 
   // Clamp dt to avoid physics tunnelling
   const stepDt = Math.min(dt, 0.05);
 
+  // Melee swing state machine (3-hit combo, 3rd swing is a spin)
+  const swing = updatePlayerAttack(player, input, stepDt);
+  if (swing.slashed) {
+    events.slashed = true;
+    events.spinAttack = swing.spin;
+    events.swingIndex = swing.swingIndex;
+  }
+
   // Timers
   if (player.dashCooldown > 0) player.dashCooldown = Math.max(0, player.dashCooldown - stepDt);
   if (player.invulnerableTimer > 0) player.invulnerableTimer = Math.max(0, player.invulnerableTimer - stepDt);
+  if (player.comboTimer > 0) player.comboTimer = Math.max(0, player.comboTimer - stepDt);
 
   if (player.grounded) {
     player.coyoteTimer = COYOTE_TIME;
@@ -131,6 +196,7 @@ export function updatePlayerPhysics(
     player.canDoubleJump = true;
     player.airDashesLeft = player.maxAirDashes ?? 3;
     player.dashChainCount = 0;
+    player.stompChain = 0;
   } else {
     player.coyoteTimer = Math.max(0, player.coyoteTimer - stepDt);
   }
@@ -416,12 +482,23 @@ export function updatePlayerPhysics(
         // Fruits heal 1 HP if damaged
         if (player.health < player.maxHealth) {
           player.health += 1;
+          events.healed = true;
         }
       } else if (item.type === 'sun_coin') {
         player.sunCoins += 1;
         player.pearls += 5; // sun coins give 5 pearls equivalent
       } else if (item.type === 'totem_relic') {
         player.relicsFound += 1;
+      } else if (item.type === 'heart') {
+        // Cute monster drop: always restores 1 HP (capped)
+        player.heartsCollected += 1;
+        if (player.health < player.maxHealth) {
+          player.health += 1;
+          events.healed = true;
+        } else {
+          // Full health turns the heart into a small pearl bonus
+          player.pearls += 1;
+        }
       }
       events.collectedItem = item;
       break;
@@ -435,13 +512,16 @@ export function calculateScoreAndStars(
   timeSeconds: number,
   collectedPearls: number,
   targetPearls: number,
-  relicFound: boolean
+  relicFound: boolean,
+  monsterBonus = 0,
+  bestCombo = 0
 ): { score: number; stars: number } {
-  // Score formula: Pearls * 100 + Relic bonus (1500) + Time bonus
+  // Score formula: Pearls * 100 + Relic bonus (1500) + monster bounty + combo + Time bonus
   const pearlScore = collectedPearls * 100;
   const relicScore = relicFound ? 1500 : 0;
   const timeBonus = Math.max(0, Math.floor(3000 - timeSeconds * 25));
-  const totalScore = pearlScore + relicScore + timeBonus;
+  const comboScore = bestCombo >= 3 ? Math.min(1200, (bestCombo - 2) * 60) : 0;
+  const totalScore = pearlScore + relicScore + timeBonus + Math.max(0, monsterBonus) + comboScore;
 
   // Star calculation
   let stars = 1;

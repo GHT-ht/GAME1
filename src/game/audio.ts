@@ -290,8 +290,189 @@ class SoundEngine {
     } catch {}
   }
 
-  public startBGM(theme: 'cheerful' | 'mystic' | 'twilight' = 'cheerful') {
-    this.currentTheme = theme;
+  // -------------------------------------------------------------------------
+  // Cute monster combat sounds
+  // -------------------------------------------------------------------------
+
+  /** Airy palm-leaf swing whoosh; the 3rd combo swing is a wider spin. */
+  public playSlash(spin: boolean = false) {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx || this.ctx.state !== 'running') return;
+
+      const duration = spin ? 0.26 : 0.16;
+      const bufferSize = Math.floor(this.ctx.sampleRate * duration);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / bufferSize;
+        data[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * t) * (1 - t * 0.6);
+      }
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      const now = this.ctx.currentTime;
+      filter.frequency.setValueAtTime(spin ? 520 : 900, now);
+      filter.frequency.exponentialRampToValueAtTime(spin ? 1800 : 1500, now + duration);
+      filter.Q.setValueAtTime(spin ? 1.4 : 2.6, now);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(spin ? 0.2 : 0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+      noise.start();
+      noise.stop(now + duration);
+
+      if (spin) {
+        this.playTone(660, 0.18, 'triangle', 0.08);
+        setTimeout(() => this.playTone(990, 0.16, 'sine', 0.07), 40);
+      }
+    } catch {}
+  }
+
+  /** Squishy "boink" when a cute monster takes damage. */
+  public playMonsterHurt() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx || this.ctx.state !== 'running') return;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const now = this.ctx.currentTime;
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(420, now);
+      osc.frequency.exponentialRampToValueAtTime(180, now + 0.11);
+      gain.gain.setValueAtTime(0.09, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start();
+      osc.stop(now + 0.12);
+
+      this.playTone(880, 0.08, 'sine', 0.05);
+    } catch {}
+  }
+
+  /** Happy little poof when a monster is defeated (bigger for bosses). */
+  public playMonsterDefeat(isBoss: boolean = false) {
+    if (this.isMuted) return;
+    try {
+      if (isBoss) {
+        const fanfare = [392.0, 523.25, 659.25, 783.99, 1046.5];
+        fanfare.forEach((f, i) => setTimeout(() => this.playTone(f, 0.5, 'triangle', 0.14), i * 90));
+        return;
+      }
+      this.playTone(700, 0.12, 'triangle', 0.1);
+      setTimeout(() => this.playTone(1046.5, 0.18, 'sine', 0.09), 55);
+    } catch {}
+  }
+
+  /** Wet "thock" when the player stomps on a monster's head. */
+  public playStomp() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx || this.ctx.state !== 'running') return;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const now = this.ctx.currentTime;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(90, now + 0.16);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start();
+      osc.stop(now + 0.17);
+    } catch {}
+  }
+
+  /** Friendly blip when a monster telegraphs an attack. */
+  public playMonsterTelegraph() {
+    if (this.isMuted) return;
+    try {
+      this.playTone(1174.66, 0.09, 'sine', 0.06);
+      setTimeout(() => this.playTone(1567.98, 0.09, 'sine', 0.05), 70);
+    } catch {}
+  }
+
+  /** Soft pop when a monster spits a projectile. */
+  public playProjectile() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx || this.ctx.state !== 'running') return;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const now = this.ctx.currentTime;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(180, now);
+      osc.frequency.exponentialRampToValueAtTime(620, now + 0.12);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start();
+      osc.stop(now + 0.13);
+    } catch {}
+  }
+
+  /** Deep growl when a boss enters its enraged phase. */
+  public playBossRoar() {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx || this.ctx.state !== 'running') return;
+
+      for (let i = 0; i < 2; i++) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const now = this.ctx.currentTime + i * 0.12;
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150 - i * 30, now);
+        osc.frequency.exponentialRampToValueAtTime(52, now + 0.5);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.16, now + 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(now + 0.55);
+      }
+    } catch {}
+  }
+
+  /** Rising sparkle for each combo milestone. */
+  public playComboUp(combo: number = 3) {
+    if (this.isMuted) return;
+    try {
+      const scale = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66];
+      const idx = Math.min(scale.length - 1, Math.floor(combo / 3));
+      this.playTone(scale[idx], 0.22, 'triangle', 0.1);
+      setTimeout(() => this.playTone(scale[idx] * 1.5, 0.16, 'sine', 0.06), 50);
+    } catch {}
+  }
+
+  public playHeartPickup() {
+    if (this.isMuted) return;
+    try {
+      this.playTone(659.25, 0.14, 'sine', 0.13);
+      setTimeout(() => this.playTone(987.77, 0.22, 'sine', 0.12), 70);
+    } catch {}
+  }
+
+  public startBGM(theme: 'cheerful' | 'mystic' | 'twilight' = 'cheerful') {    this.currentTheme = theme;
     if (this.bgmTimer) {
       clearInterval(this.bgmTimer);
       this.bgmTimer = null;

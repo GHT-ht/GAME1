@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, ArrowRight, ArrowUp, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUp, Zap, Swords } from 'lucide-react';
 
 interface MobileControlsProps {
   onLeftDown: () => void;
@@ -9,6 +9,7 @@ interface MobileControlsProps {
   onJumpDown: () => void;
   onJumpUp: () => void;
   onDash: () => void;
+  onAttack: () => void;
 }
 
 export const MobileControls: React.FC<MobileControlsProps> = ({
@@ -19,6 +20,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onJumpDown,
   onJumpUp,
   onDash,
+  onAttack,
 }) => {
   return (
     <div className="fixed inset-x-0 bottom-3 sm:bottom-4 z-30 pointer-events-none flex justify-between px-3 sm:px-6 select-none">
@@ -47,8 +49,20 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
         </button>
       </div>
 
-      {/* Action Buttons: Jump & Dash */}
+      {/* Action Buttons: Jump & Dash & Slash */}
       <div className="pointer-events-auto flex items-center gap-3">
+        {/* Slash */}
+        <button
+          onTouchStart={(e) => { e.preventDefault(); onAttack(); }}
+          onClick={onAttack}
+          className="w-13 h-13 rounded-full bg-emerald-500/85 active:bg-emerald-400 text-white flex flex-col items-center justify-center border border-white/30 shadow-lg active:scale-90 transition-transform"
+          aria-label="挥叶斩"
+          title="挥叶斩 (键盘 F)"
+        >
+          <Swords className="w-5 h-5" />
+          <span className="text-[9px] font-black tracking-tight">挥击</span>
+        </button>
+
         {/* Dash */}
         <button
           onTouchStart={(e) => { e.preventDefault(); onDash(); }}
