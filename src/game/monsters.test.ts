@@ -631,3 +631,65 @@ test('defeating every monster on an island is possible without touching hazards'
   assert.ok(h.player.monstersDefeated === 0, 'engine counts kills, not the raw update loop');
   assert.ok(h.player.health >= 0);
 });
+
+test('new heavy attack deals more damage and has its own cooldown', () => {
+  const h = harness();
+  standOnFloor(h.player, h.level);
+  const m = createMonster({ kind: 'crabling', x: h.player.x + h.player.w + 10, y: 600 - 26 });
+  m.maxHp = m.hp = 12;
+  h.monsters.push(m);
+  const input = { left:false, right:false, down:false, jumpHeld:false,
+    jumpJustPressed:false, dashJustPressed:false, heavyJustPressed:true };
+  const swing = updatePlayerAttack(h.player,input,0.016);
+  assert.equal(swing.slashed,true);
+  assert.equal(h.player.attackKind,'heavy');
+  step(h);
+  assert.equal(m.hp,7,'heavy strike does exactly five damage');
+  assert.ok(h.player.heavyCooldown > 0);
+});
+
+test('area skill reaches monsters on both sides and charges ultimate on real hits', () => {
+  const h=harness();
+  standOnFloor(h.player,h.level);
+  h.player.ultimateMeter=20;
+  const first=createMonster({kind:'shroomling',x:h.player.x-36,y:600-34});
+  const second=createMonster({kind:'shroomling',x:h.player.x+30,y:600-34});
+  h.monsters.push(first,second);
+  const input={left:false,right:false,down:false,jumpHeld:false,jumpJustPressed:false,dashJustPressed:false,skillJustPressed:true};
+  updatePlayerAttack(h.player,input,0.016);
+  const events=step(h);
+  assert.equal(events.monstersHit.length,2);
+  assert.ok(h.player.ultimateMeter>20);
+  assert.ok(h.player.skillCooldown>0);
+});
+
+test('ultimate consumes full energy and hits multiple targets once per cast', () => {
+  const h=harness();
+  standOnFloor(h.player,h.level);
+  h.player.ultimateMeter=100;
+  const m=createMonster({kind:'shroomling',x:h.player.x+60,y:600-34});
+  m.maxHp=m.hp=20;
+  h.monsters.push(m);
+  const input={left:false,right:false,down:false,jumpHeld:false,jumpJustPressed:false,dashJustPressed:false,ultimateJustPressed:true};
+  updatePlayerAttack(h.player,input,0.016);
+  assert.equal(h.player.attackKind,'ultimate');
+  assert.equal(h.player.ultimateMeter,0);
+  step(h);
+  assert.equal(m.hp,11);
+  // Monster hit gate expires, but this single ultimate cast must not multi-hit.
+  for (let i=0;i<15;i++) step(h);
+  assert.equal(m.hp,11);
+});
+
+test('guard absorbs one monster contact and then goes on cooldown', () => {
+  const h=harness();standOnFloor(h.player,h.level);
+  const m=createMonster({kind:'crabling',x:h.player.x+5,y:600-26});
+  h.monsters.push(m);
+  const hp=h.player.health;
+  updatePlayerAttack(h.player,{left:false,right:false,down:false,jumpHeld:false,jumpJustPressed:false,dashJustPressed:false,guardJustPressed:true},0.016);
+  assert.ok(h.player.guardTimer>0);
+  step(h);
+  assert.equal(h.player.health,hp);
+  assert.equal(h.player.guardTimer,0);
+  assert.ok(h.player.guardCooldown>0);
+});

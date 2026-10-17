@@ -10,3 +10,6 @@
     background-color: #020617;
   }
 }
+
+/* Keep touch controls off the desktop keyboard layout. */
+@media (min-width:768px){.mobile-only-controls{display:none!important}}

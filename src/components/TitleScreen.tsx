@@ -3,15 +3,18 @@ import type { BiomeId } from '../game/types.ts';
 import { BIOMES } from '../game/levels.ts';
 import { getDefaultWeatherForBiome, getWeatherLabel } from '../game/weather.ts';
 import { Play, Sparkles, MapPin } from 'lucide-react';
+import { type KeyBindings, prettyKey } from '../game/controls.ts';
 
 interface TitleScreenProps {
   currentBiome: BiomeId;
+  bindings: KeyBindings;
   onSelectBiome: (biome: BiomeId) => void;
   onStartGame: () => void;
 }
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   currentBiome,
+  bindings,
   onSelectBiome,
   onStartGame,
 }) => {
@@ -108,14 +111,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           <Play className="w-6 h-6 fill-current transition-transform group-hover:scale-110" />
           <span>启航探险 START JOURNEY</span>
           <span className="text-xs font-mono font-bold opacity-75 ml-1 px-2 py-0.5 bg-black/15 rounded-md">
-            Enter / Space
+            Enter / {prettyKey(bindings.jump)}
           </span>
         </button>
       </div>
 
       {/* Control Hint Line */}
       <div className="text-xs text-slate-200 font-medium px-4 py-2 rounded-full bg-slate-950/70 border border-white/10 shadow-lg drop-shadow text-center">
-        🎮 A/D 或 方向键移动 · Space 跳跃与滑翔 · Shift 冲刺 · <span className="text-emerald-300 font-bold">F 挥叶斩</span> · 踩头 / 冲刺 / 挥击打小怪物 · P 暂停 · M 静音
+        🎮 A/D、方向键移动 · {prettyKey(bindings.jump)} 跳跃 · {prettyKey(bindings.attack)} 普攻 · {prettyKey(bindings.dash)} 冲刺 · {prettyKey(bindings.heavy)} 重击 · {prettyKey(bindings.skill)} 技能 · {prettyKey(bindings.ultimate)} 大招 · {prettyKey(bindings.guard)} 格挡 · 跳台按住 ↑/跳跃蓄力，松手弹射 · 右上角可自定义键位
       </div>
     </div>
   );

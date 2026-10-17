@@ -141,6 +141,7 @@ export class GameRenderer {
 
     // 4. Detailed Painterly Platforms & Structures
     this.drawPlatforms(ctx, level, biome, time);
+    this.drawBoosterCharge(ctx, player, level);
 
     // 5. Ancient Stone Totem Shrine with Volumetric Glyphs
     this.drawTotemAltar(ctx, level.totemAltar, time);
@@ -336,6 +337,30 @@ export class GameRenderer {
           break;
       }
     }
+  }
+
+  /** Charge meter and clear instructions above the actual booster in world space. */
+  private drawBoosterCharge(ctx: CanvasRenderingContext2D, player: PlayerState, level: LevelData) {
+    if (player.boosterPadIndex < 0) return;
+    const pad = level.platforms[player.boosterPadIndex];
+    if (!pad || pad.type !== 'bouncy') return;
+    const x = pad.x + pad.w / 2;
+    const y = pad.y - player.h - 40;
+    const progress = Math.max(0, Math.min(1, player.boosterCharge));
+    ctx.save();
+    ctx.fillStyle = 'rgba(8, 24, 40, .94)';
+    ctx.strokeStyle = progress >= 1 ? '#fde047' : '#67e8f9';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();ctx.roundRect(x - 58, y - 23, 116, 47, 11);ctx.fill();ctx.stroke();
+    ctx.textAlign = 'center';ctx.textBaseline = 'middle';
+    ctx.font = 'bold 11px sans-serif';ctx.fillStyle = '#fff7d6';
+    ctx.fillText(player.boosterCharging ? `蓄力 ${Math.round(progress * 100)}%` : '按 ↑ / 空格蓄力', x, y - 9);
+    ctx.fillStyle = '#243447';ctx.fillRect(x - 48,y + 3,96,8);
+    const fill = ctx.createLinearGradient(x-48,0,x+48,0);
+    fill.addColorStop(0,'#22d3ee');fill.addColorStop(1,'#fde047');
+    ctx.fillStyle = fill;ctx.fillRect(x-48,y+3,96*progress,8);
+    ctx.fillStyle='#cbd5e1';ctx.font='9px sans-serif';ctx.fillText('松开 · 发射',x,y+19);
+    ctx.restore();
   }
 
   private drawAncientCliffPlatform(
@@ -588,7 +613,7 @@ export class GameRenderer {
     const badgeY = y - 26 + Math.sin(time * 4) * 2;
     ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
     ctx.beginPath();
-    ctx.roundRect(cx - 42, badgeY - 8, 84, 17, 8);
+    ctx.roundRect(cx - 55, badgeY - 8, 110, 17, 8);
     ctx.fill();
     ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
     ctx.lineWidth = 1.2;
@@ -598,7 +623,7 @@ export class GameRenderer {
     ctx.font = 'bold 9px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('⬆️ BOOSTER', cx, badgeY);
+    ctx.fillText('⬆️ HOLD & RELEASE', cx, badgeY);
 
     ctx.restore();
   }
@@ -1822,7 +1847,42 @@ export class GameRenderer {
 
   /** Melee swing arcs: a crescent palm-leaf slash, or a full spin ring. */
   private drawPlayerAttackVfx(ctx: CanvasRenderingContext2D, p: PlayerState, time: number) {
+    if (p.attackTimer <= 0 && p.guardTimer <= 0) return;
+    if (p.guardTimer > 0) {
+      ctx.save(); ctx.translate(p.x + p.w/2, p.y + p.h/2);
+      const glimmer = 0.4 + Math.sin(time*18)*0.2;
+      ctx.strokeStyle = `rgba(103,232,249,${glimmer+0.3})`;
+      ctx.shadowColor='#22d3ee';ctx.shadowBlur=15;ctx.lineWidth=4;
+      ctx.beginPath();ctx.ellipse(0,0,p.w*1.15,p.h*0.83,0,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+    }
     if (p.attackTimer <= 0) return;
+    if (p.attackKind !== 'light') {
+      const kind = p.attackKind;
+      const maxTime = kind === 'ultimate' ? 0.42 : kind === 'skill' ? 0.3 : 0.27;
+      const progress = 1 - Math.min(1, p.attackTimer / maxTime);
+      const maxRadius = kind === 'ultimate' ? 160 : kind === 'skill' ? 90 : 74;
+      const radius = 18 + maxRadius * Math.min(1, progress * 1.7);
+      const cx = p.x+p.w/2,cy=p.y+p.h/2;
+      ctx.save();ctx.globalAlpha = Math.max(0,1-progress);
+      ctx.shadowColor = kind === 'ultimate' ? '#f0abfc' : kind === 'skill' ? '#86efac' : '#fdba74';
+      ctx.shadowBlur = kind === 'ultimate' ? 35 : 18;
+      ctx.strokeStyle = kind === 'ultimate' ? '#e879f9' : kind === 'skill' ? '#a7f3d0' : '#fdba74';
+      ctx.lineWidth = kind === 'ultimate' ? 10 : kind === 'skill' ? 6 : 8;
+      ctx.beginPath();
+      if (kind === 'heavy') {
+        const sx = p.facing > 0 ? cx + 18 : cx - 18;
+        ctx.arc(sx, cy, radius, -1.25, 1.25); // giant forward strike
+      } else {
+        ctx.ellipse(cx,cy,radius,radius*(kind==='ultimate'?0.63:0.53),0,0,Math.PI*2);
+      }
+      ctx.stroke();
+      if (kind==='ultimate') {
+        ctx.globalAlpha = Math.max(0,(1-progress)*0.25);
+        ctx.fillStyle = '#f0abfc';ctx.beginPath();ctx.arc(cx,cy,radius*0.8,0,Math.PI*2);ctx.fill();
+      }
+      ctx.restore(); return;
+    }
     const spinning = p.attackIndex === 2;
     const total = spinning ? 0.22 : 0.18;
     const progress = 1 - Math.min(1, p.attackTimer / total);

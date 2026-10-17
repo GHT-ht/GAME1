@@ -31,6 +31,7 @@ import {
 import { ParticlePool } from './particles.ts';
 import { GameRenderer } from './renderer.ts';
 import { sound } from './audio.ts';
+import { type KeyBindings, DEFAULT_BINDINGS, loadBindings, saveBindings } from './controls.ts';
 import {
   createWeatherState,
   updateWeather,
@@ -45,6 +46,7 @@ export interface GameEngineCallbacks {
   onTimeUpdate: (seconds: number) => void;
   onWeatherUpdate?: (weather: WeatherState) => void;
   onCombatUpdate?: (combat: CombatSnapshot) => void;
+  onMuteChange?: (muted: boolean) => void;
 }
 
 export class GameEngine {
@@ -88,10 +90,86 @@ export class GameEngine {
     jumpHeld: false,
     dashJustPressed: false,
     attackJustPressed: false,
+    heavyJustPressed: false,
+    skillJustPressed: false,
+    ultimateJustPressed: false,
+    guardJustPressed: false,
     down: false,
   };
 
   private keysHeld = new Set<string>();
+  private bindings: KeyBindings = loadBindings();
+  private controlsLocked = false;
+
+  public setControlsLocked(locked: boolean) {
+    this.controlsLocked = locked;
+    this.clearInput();
+  }
+  public setBindings(bindings: KeyBindings) {
+    this.bindings = { ...bindings };
+    saveBindings(bindings);
+    this.clearInput();
+  }
+  public getBindings(): KeyBindings { return { ...this.bindings }; }
+  private clearInput() {
+    this.keysHeld.clear();
+    this.input.left = this.input.right = this.input.down = false;
+    this.input.up = this.input.jumpHeld = false;
+    this.input.jumpJustPressed = this.input.dashJustPressed = false;
+    this.input.attackJustPressed = this.input.heavyJustPressed = false;
+    this.input.skillJustPressed = this.input.ultimateJustPressed = this.input.guardJustPressed = false;
+  }
+  private refreshHeld() {
+    const held = (action: keyof KeyBindings, alias?: string) =>
+      this.keysHeld.has(this.bindings[action]) || Boolean(alias && this.keysHeld.has(alias));
+    this.input.left = held('left', 'ArrowLeft');
+    this.input.right = held('right', 'ArrowRight');
+    this.input.up = held('up', 'ArrowUp');
+    this.input.down = held('down', 'ArrowDown');
+    this.input.jumpHeld = held('jump');
+  }
+
+  private onKeyDown = (e: KeyboardEvent) => {
+    if (this.controlsLocked || this.isTypingTarget(e.target)) return;
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) ||
+      Object.values(this.bindings).includes(e.code)) e.preventDefault();
+    if (e.repeat) return;
+    this.keysHeld.add(e.code);
+    this.refreshHeld();
+    if (this.state === 'title') {
+      if (e.code === this.bindings.jump || e.code === 'Enter') this.startGame();
+      return;
+    }
+    if (e.code === this.bindings.pause) {
+      if (this.state === 'playing') this.pauseGame();
+      else if (this.state === 'paused') this.resumeGame();
+      this.clearInput();
+      return;
+    }
+    if (e.code === this.bindings.mute) {
+      const muted = !sound.getMuted(); sound.setMuted(muted); this.callbacks.onMuteChange?.(muted);
+    }
+    if (e.code === this.bindings.restart && ['playing', 'paused', 'gameover'].includes(this.state)) this.restartLevel();
+    if (this.state !== 'playing') return;
+    if (e.code === this.bindings.jump) this.input.jumpJustPressed = true;
+    if (e.code === this.bindings.attack) this.input.attackJustPressed = true;
+    if (e.code === this.bindings.dash) this.input.dashJustPressed = true;
+    if (e.code === this.bindings.heavy) this.input.heavyJustPressed = true;
+    if (e.code === this.bindings.skill) this.input.skillJustPressed = true;
+    if (e.code === this.bindings.ultimate) this.input.ultimateJustPressed = true;
+    if (e.code === this.bindings.guard) this.input.guardJustPressed = true;
+  };
+  private onKeyUp = (e: KeyboardEvent) => {
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    this.keysHeld.delete(e.code);
+    this.refreshHeld();
+  };
+  private onBlur = () => this.clearInput();
+  private isTypingTarget(target: EventTarget | null) {
+    return target instanceof HTMLElement &&
+      (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+  }
+
 
   constructor(canvas: HTMLCanvasElement, callbacks: GameEngineCallbacks) {
     this.canvas = canvas;
@@ -189,99 +267,9 @@ export class GameEngine {
       }
     });
 
-    window.addEventListener('keydown', (e) => {
-      // Prevent browser scroll inside iframe on arrow and space keys
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-        e.preventDefault();
-      }
-
-      if (e.repeat) return;
-      this.keysHeld.add(e.code);
-
-      if (e.code === 'KeyA' || e.code === 'ArrowLeft') {
-        this.input.left = true;
-      }
-      if (e.code === 'KeyD' || e.code === 'ArrowRight') {
-        this.input.right = true;
-      }
-      if (e.code === 'KeyW' || e.code === 'ArrowUp') {
-        this.input.up = true;
-      }
-      if (e.code === 'KeyS' || e.code === 'ArrowDown') {
-        this.input.down = true;
-      }
-      if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyC' || e.code === 'KeyZ') {
-        this.input.jumpJustPressed = true;
-        this.input.jumpHeld = true;
-
-        if (this.state === 'title') {
-          this.startGame();
-          return;
-        }
-      }
-      if (e.code === 'Enter') {
-        if (this.state === 'title') {
-          this.startGame();
-          return;
-        }
-      }
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyK' || e.code === 'KeyX' || e.code === 'KeyJ') {
-        this.input.dashJustPressed = true;
-      }
-      if (e.code === 'KeyF' || e.code === 'KeyE') {
-        this.input.attackJustPressed = true;
-      }
-      if (e.code === 'KeyP' || e.code === 'Escape') {
-        if (this.state === 'playing') {
-          this.pauseGame();
-        } else if (this.state === 'paused') {
-          this.resumeGame();
-        }
-      }
-      if (e.code === 'KeyM') {
-        const nextMute = !sound.getMuted();
-        sound.setMuted(nextMute);
-      }
-      if (e.code === 'KeyR') {
-        if (this.state === 'playing' || this.state === 'paused' || this.state === 'gameover') {
-          this.restartLevel();
-        }
-      }
-    });
-
-    window.addEventListener('keyup', (e) => {
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-        e.preventDefault();
-      }
-      this.keysHeld.delete(e.code);
-
-      if (e.code === 'KeyA' || e.code === 'ArrowLeft') {
-        this.input.left = false;
-      }
-      if (e.code === 'KeyD' || e.code === 'ArrowRight') {
-        this.input.right = false;
-      }
-      if (e.code === 'KeyW' || e.code === 'ArrowUp') {
-        this.input.up = false;
-      }
-      if (e.code === 'KeyS' || e.code === 'ArrowDown') {
-        this.input.down = false;
-      }
-      if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyC' || e.code === 'KeyZ') {
-        this.input.jumpHeld = false;
-      }
-    });
-
-    // Reset input on window blur
-    window.addEventListener('blur', () => {
-      this.keysHeld.clear();
-      this.input.left = false;
-      this.input.right = false;
-      this.input.jumpHeld = false;
-      this.input.jumpJustPressed = false;
-      this.input.dashJustPressed = false;
-      this.input.attackJustPressed = false;
-    });
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
   }
 
   // Mobile virtual button methods
@@ -304,9 +292,11 @@ export class GameEngine {
   public setMobileDash() {
     this.input.dashJustPressed = true;
   }
-  public setMobileAttack() {
-    this.input.attackJustPressed = true;
-  }
+  public setMobileAttack() { this.input.attackJustPressed = true; }
+  public setMobileHeavy() { this.input.heavyJustPressed = true; }
+  public setMobileSkill() { this.input.skillJustPressed = true; }
+  public setMobileUltimate() { this.input.ultimateJustPressed = true; }
+  public setMobileGuard() { this.input.guardJustPressed = true; }
 
   public setBiome(biomeId: BiomeId) {
     this.currentBiome = biomeId;
@@ -394,6 +384,9 @@ export class GameEngine {
   public destroy() {
     if (this.rafId) cancelAnimationFrame(this.rafId);
     window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onBlur);
     sound.stopBGM();
   }
 
@@ -419,6 +412,8 @@ export class GameEngine {
       if (this.combatTimer >= 0.1) {
         this.combatTimer = 0;
         this.emitCombat();
+        if (this.player.boosterPadIndex >= 0 || this.player.attackTimer > 0 || this.player.guardTimer > 0)
+          this.callbacks.onPlayerUpdate(this.player);
       }
 
       // Physics update
@@ -435,7 +430,8 @@ export class GameEngine {
       this.player = player;
 
       if (events.slashed) {
-        sound.playSlash(events.spinAttack);
+        if (player.attackKind === 'light') sound.playSlash(events.spinAttack);
+        else sound.playSpecial(player.attackKind as 'heavy' | 'skill' | 'ultimate');
         this.particles.emitDashContrail(
           player.x + player.w * 0.5,
           player.y + player.h * 0.5,
@@ -443,6 +439,7 @@ export class GameEngine {
           events.spinAttack ? 3 : 1
         );
       }
+      if (events.guardStarted) sound.playSpecial('guard');
       if (events.healed) {
         sound.playHeartPickup();
         this.particles.emitSparkles(player.x + player.w * 0.5, player.y + player.h * 0.5, 12, '#fb7185');
@@ -662,6 +659,10 @@ export class GameEngine {
     this.input.jumpJustPressed = false;
     this.input.dashJustPressed = false;
     this.input.attackJustPressed = false;
+    this.input.heavyJustPressed = false;
+    this.input.skillJustPressed = false;
+    this.input.ultimateJustPressed = false;
+    this.input.guardJustPressed = false;
 
     // Update Particles & Dynamic Weather
     this.particles.update(dt);

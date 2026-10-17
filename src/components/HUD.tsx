@@ -2,6 +2,7 @@ import React from 'react';
 import type { PlayerState, BiomeConfig, CombatSnapshot } from '../game/types.ts';
 import { getWeatherLabel, type WeatherState } from '../game/weather.ts';
 import { comboTier } from '../game/monsters.ts';
+import { type KeyBindings, prettyKey } from '../game/controls.ts';
 import { Volume2, VolumeX, Pause, RotateCcw, Compass, Swords, Heart, Skull } from 'lucide-react';
 
 interface HUDProps {
@@ -12,6 +13,7 @@ interface HUDProps {
   targetPearls: number;
   timeSpent: number;
   isMuted: boolean;
+  bindings: KeyBindings;
   onToggleMute: () => void;
   onPause: () => void;
   onRestart: () => void;
@@ -27,6 +29,7 @@ export const HUD: React.FC<HUDProps> = ({
   targetPearls,
   timeSpent,
   isMuted,
+  bindings,
   onToggleMute,
   onPause,
   onRestart,
@@ -186,6 +189,19 @@ export const HUD: React.FC<HUDProps> = ({
             </div>
           </div>
 
+          {/* Combat energy and booster charge — real gameplay values. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="rounded-xl bg-slate-950/85 border border-fuchsia-400/30 px-3 py-1.5 w-40">
+              <div className="flex justify-between font-black text-[10px] text-fuchsia-200"><span>⚡ 大招能量 [{prettyKey(bindings.ultimate)}]</span><span>{Math.round(player.ultimateMeter)}%</span></div>
+              <div className="h-2 rounded-full bg-slate-800 mt-1 overflow-hidden"><div className="h-full bg-gradient-to-r from-fuchsia-600 to-amber-300" style={{width:`${player.ultimateMeter}%`,background:'linear-gradient(90deg,#9333ea,#fcd34d)'}} /></div>
+            </div>
+            {player.boosterPadIndex >= 0 && <div className="rounded-xl bg-amber-950/90 border border-amber-400/70 px-3 py-1.5 w-44">
+              <div className="flex justify-between font-black text-[10px] text-amber-100"><span>⬆️ 蓄力跳台</span><span>{Math.round(player.boosterCharge * 100)}%</span></div>
+              <div className="h-2 bg-amber-950 rounded-full mt-1 overflow-hidden"><div className="h-full bg-gradient-to-r from-amber-500 to-yellow-200" style={{width:`${player.boosterCharge * 100}%`,background:'linear-gradient(90deg,#f59e0b,#fef08a)'}} /></div>
+              <div className="text-[10px] text-amber-200">按住 {prettyKey(bindings.up)} / ↑ / {prettyKey(bindings.jump)}，松手发射</div>
+            </div>}
+          </div>
+
           {/* Player HP bar + monster combat readout */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* Smooth HP bar for precise health reading */}
@@ -328,18 +344,16 @@ export const HUD: React.FC<HUDProps> = ({
 
       {/* Bottom Control Clue Line */}
       <footer className="flex items-center justify-between text-xs text-slate-200 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
-        <div className="hidden sm:flex items-center gap-3 bg-slate-950/70 px-4 py-2 rounded-full border border-white/15 shadow flex-wrap">
-          <span><kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">A/D</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">←/→</kbd> Move</span>
-          <span>·</span>
-          <span><kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">Space</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">C</kbd> 3-Stage Jump (三段跳)</span>
-          <span>·</span>
-          <span><kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">Shift</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">X</kbd> Air Dash (空中连冲)</span>
-          <span>·</span>
-          <span className="text-emerald-300 font-bold"><kbd className="px-1.5 py-0.5 rounded bg-white/20 text-white font-mono font-bold">F</kbd> 挥叶斩 (三连击第三下是回旋斩)</span>
-          <span>·</span>
-          <span className="text-violet-300 font-bold">👾 踩头 / 冲刺 / 挥击都能打小怪物，击败会掉珍珠和爱心</span>
-          <span>·</span>
-          <span className="text-amber-300 font-bold">⬆️ Booster 助力跳台 (踩上自动起跳/跳跃大冲刺)</span>
+        <div className="hidden sm:flex items-center gap-2 bg-slate-950/75 px-4 py-2 rounded-full border border-white/15 shadow flex-wrap max-w-[78vw]">
+          <span><b className="text-white">{prettyKey(bindings.left)}/{prettyKey(bindings.right)} ←/→</b> 移动</span><span>·</span>
+          <span><b className="text-amber-300">{prettyKey(bindings.jump)}</b> 三段跳</span><span>·</span>
+          <span><b className="text-emerald-300">{prettyKey(bindings.attack)}</b> 连斩</span><span>·</span>
+          <span><b className="text-sky-300">{prettyKey(bindings.dash)}</b> 冲刺</span><span>·</span>
+          <span><b className="text-orange-300">{prettyKey(bindings.heavy)}</b> 重击</span><span>·</span>
+          <span><b className="text-violet-300">{prettyKey(bindings.skill)}</b> 技能</span><span>·</span>
+          <span><b className="text-pink-300">{prettyKey(bindings.ultimate)}</b> 大招</span><span>·</span>
+          <span><b className="text-teal-300">{prettyKey(bindings.guard)}</b> 格挡</span><span>·</span>
+          <span className="text-amber-300">跳台：按住 ↑/{prettyKey(bindings.jump)} 蓄力，松开发射</span>
         </div>
         <div className="text-right ml-auto text-[11px] sm:text-xs text-amber-300 font-bold bg-slate-950/70 px-3 py-1.5 rounded-full border border-amber-400/30">
           {combat && combat.bossActive

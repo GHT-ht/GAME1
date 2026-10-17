@@ -10,6 +10,10 @@ interface MobileControlsProps {
   onJumpUp: () => void;
   onDash: () => void;
   onAttack: () => void;
+  onHeavy: () => void;
+  onSkill: () => void;
+  onUltimate: () => void;
+  onGuard: () => void;
 }
 
 export const MobileControls: React.FC<MobileControlsProps> = ({
@@ -21,9 +25,13 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onJumpUp,
   onDash,
   onAttack,
+  onHeavy,
+  onSkill,
+  onUltimate,
+  onGuard,
 }) => {
   return (
-    <div className="fixed inset-x-0 bottom-3 sm:bottom-4 z-30 pointer-events-none flex justify-between px-3 sm:px-6 select-none">
+    <div className="mobile-only-controls fixed inset-x-0 bottom-3 sm:bottom-4 z-30 pointer-events-none flex justify-between px-3 sm:px-6 select-none">
       {/* Left / Right D-Pad */}
       <div className="pointer-events-auto flex items-center gap-2">
         <button
@@ -49,15 +57,21 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
         </button>
       </div>
 
-      {/* Action Buttons: Jump & Dash & Slash */}
-      <div className="pointer-events-auto flex items-center gap-3">
+      {/* Action Buttons: distinct skills, no shared keyboard shortcuts */}
+      <div className="pointer-events-auto flex items-end gap-2">
+        <div className="flex flex-col gap-1.5">
+          <button onClick={onHeavy} className="px-2 py-1 rounded-lg bg-orange-600/85 border border-white/30 text-white font-bold text-[10px]">重击 L</button>
+          <button onClick={onSkill} className="px-2 py-1 rounded-lg bg-violet-600/85 border border-white/30 text-white font-bold text-[10px]">技能 U</button>
+          <button onClick={onUltimate} className="px-2 py-1 rounded-lg bg-pink-600/85 border border-white/30 text-white font-bold text-[10px]">大招 I</button>
+          <button onClick={onGuard} className="px-2 py-1 rounded-lg bg-teal-600/85 border border-white/30 text-white font-bold text-[10px]">格挡 O</button>
+        </div>
         {/* Slash */}
         <button
           onTouchStart={(e) => { e.preventDefault(); onAttack(); }}
           onClick={onAttack}
           className="w-13 h-13 rounded-full bg-emerald-500/85 active:bg-emerald-400 text-white flex flex-col items-center justify-center border border-white/30 shadow-lg active:scale-90 transition-transform"
           aria-label="挥叶斩"
-          title="挥叶斩 (键盘 F)"
+          title="挥叶斩 (默认 J)"
         >
           <Swords className="w-5 h-5" />
           <span className="text-[9px] font-black tracking-tight">挥击</span>

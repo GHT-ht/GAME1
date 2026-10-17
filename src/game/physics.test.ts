@@ -80,27 +80,16 @@ test('coyote time allows jumping briefly after falling off ledge', () => {
   assert.equal(player.coyoteTimer, 0);
 });
 
-test('bouncy tiki platform launches player with high velocity', () => {
-  const p = createInitialPlayer(50, 95);
-  p.vy = 150;
-
-  const platforms: Platform[] = [
-    { x: 30, y: 130, w: 60, h: 20, type: 'bouncy' },
-  ];
-
-  const emptyInput = {
-    left: false,
-    right: false,
-    jumpJustPressed: false,
-    jumpHeld: false,
-    dashJustPressed: false,
-    down: false,
-  };
-
-  const { player, events } = updatePlayerPhysics(p, emptyInput, platforms, [], [], 0.05, 500, 500);
-
-  assert.equal(events.bounced, true);
-  assert.equal(player.vy, BOUNCE_PAD_VELOCITY);
+test('bouncy tiki platform lands safely without auto-bouncing', () => {
+  const p = createInitialPlayer(50, 72);
+  p.vy = 250;
+  const platforms: Platform[] = [{ x:30, y:130, w:60, h:20, type:'bouncy' }];
+  const input = {left:false,right:false,jumpJustPressed:false,jumpHeld:false,dashJustPressed:false,down:false};
+  const result = updatePlayerPhysics(p,input,platforms,[],[],0.05,500,500);
+  assert.equal(result.events.bounced,false);
+  assert.equal(result.player.grounded,true);
+  assert.equal(result.player.y,130-result.player.h);
+  assert.equal(result.player.boosterPadIndex,0);
 });
 
 test('collectible pearl increases pearls count and triggers event', () => {
@@ -230,41 +219,47 @@ test('air dash allows consecutive chaining in mid-air', () => {
   assert.equal(step2.player.dashChainCount, 2);
 });
 
-test('spring booster pad automatically launches player and super-bounces when jumping', () => {
-  const p = createInitialPlayer(50, 120);
-  p.vy = 20;
+test('booster holds stable, charges with jump/up, launches exactly once on release', () => {
+  const p = createInitialPlayer(50, 130 - 44);
+  p.grounded = true;
+  p.boosterPadIndex = 0;
+  const platforms: Platform[] = [{ x:30,y:130,w:60,h:20,type:'bouncy' }];
+  const neutral = {left:false,right:false,jumpJustPressed:false,jumpHeld:false,dashJustPressed:false,down:false};
+  for (let i = 0; i < 10; i++) {
+    const result = updatePlayerPhysics(p,neutral,platforms,[],[],0.016,500,800);
+    assert.equal(result.events.bounced,false);
+    assert.equal(p.grounded,true);
+    assert.equal(p.vy,0);
+  }
+  const hold = {...neutral,up:true};
+  for (let i = 0; i < 60; i++) {
+    const result = updatePlayerPhysics(p,hold,platforms,[],[],0.016,500,800);
+    assert.equal(result.events.bounced,false);
+  }
+  assert.ok(p.boosterCharge > 0.5);
+  const launch = updatePlayerPhysics(p,neutral,platforms,[],[],0.016,500,800);
+  assert.equal(launch.events.bounced,true);
+  assert.ok(p.vy < BOUNCE_PAD_VELOCITY);
+  assert.equal(p.boosterPadIndex,-1);
+  assert.equal(p.boosterFlight,true);
+  const next = updatePlayerPhysics(p,neutral,platforms,[],[],0.016,500,800);
+  assert.equal(next.events.bounced,false);
+  assert.ok(p.vy < -350,'release must not immediately cut the charged launch');
+});
 
-  const platforms: Platform[] = [
-    { x: 30, y: 130, w: 60, h: 20, type: 'bouncy' },
-  ];
-
-  // Walking or landing on booster pad automatically triggers launch
-  const emptyInput = {
-    left: false,
-    right: false,
-    jumpJustPressed: false,
-    jumpHeld: false,
-    dashJustPressed: false,
-    down: false,
-  };
-
-  const autoBounce = updatePlayerPhysics(p, emptyInput, platforms, [], [], 0.05, 500, 500);
-  assert.equal(autoBounce.events.bounced, true);
-  assert.equal(autoBounce.player.vy, BOUNCE_PAD_VELOCITY);
-  assert.equal(autoBounce.player.jumpsLeft, 3); // Fully resets jumps!
-
-  // Super bounce with Jump key held
-  const p2 = createInitialPlayer(50, 120);
-  const jumpInput = {
-    left: false,
-    right: false,
-    jumpJustPressed: true,
-    jumpHeld: true,
-    dashJustPressed: false,
-    down: false,
-  };
-  const superBounce = updatePlayerPhysics(p2, jumpInput, platforms, [], [], 0.05, 500, 500);
-  assert.equal(superBounce.events.bounced, true);
-  assert.equal(superBounce.events.superBounced, true);
-  assert.equal(superBounce.player.vy, SUPER_BOUNCE_PAD_VELOCITY);
+test('full charge launches higher, underside contact never activates pad', () => {
+  const pads: Platform[] = [{x:30,y:130,w:60,h:20,type:'bouncy'}];
+  const empty = {left:false,right:false,jumpJustPressed:false,jumpHeld:false,dashJustPressed:false,down:false};
+  const p = createInitialPlayer(50,130 - 44);
+  p.grounded=true;p.boosterPadIndex=0;
+  for(let i=0;i<105;i++) updatePlayerPhysics(p,{...empty,jumpHeld:true},pads,[],[],0.016,500,1200);
+  assert.equal(p.boosterCharge,1);
+  const {events}=updatePlayerPhysics(p,empty,pads,[],[],0.016,500,1200);
+  assert.equal(events.superBounced,true);
+  assert.ok(p.vy < SUPER_BOUNCE_PAD_VELOCITY + 25);
+  const p2=createInitialPlayer(50,145);
+  p2.vy=-80;
+  const bottom=updatePlayerPhysics(p2,empty,pads,[],[],0.016,500,1200);
+  assert.equal(bottom.events.bounced,false);
+  assert.equal(bottom.player.boosterPadIndex,-1);
 });

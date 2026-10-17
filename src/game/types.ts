@@ -216,6 +216,7 @@ export interface Monster {
   damageTaken: number;
   /** Which client last damaged the monster (for drop ownership / duplication guards). */
   lastHitBy: 'slash' | 'dash' | 'stomp' | 'none';
+  lastPlayerSwingSerial?: number;
 }
 
 export interface MonsterProjectile {
@@ -311,6 +312,20 @@ export interface PlayerState {
   airDashesLeft: number;
   maxAirDashes: number;
   dashChainCount: number;
+  /** -1 when not standing on a booster; otherwise the current platform index. */
+  boosterPadIndex: number;
+  boosterCharge: number;
+  boosterCharging: boolean;
+  boosterLaunchGrace: number;
+  boosterFlight: boolean;
+  /** Which attack is currently active (light is the original three-hit combo). */
+  attackKind: 'none' | 'light' | 'heavy' | 'skill' | 'ultimate';
+  attackSerial: number;
+  heavyCooldown: number;
+  skillCooldown: number;
+  ultimateMeter: number;
+  guardTimer: number;
+  guardCooldown: number;
   health: number;
   maxHealth: number;
   invulnerableTimer: number;

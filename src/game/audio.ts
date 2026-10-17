@@ -111,37 +111,22 @@ class SoundEngine {
     } catch {}
   }
 
+  /** Gentle one-shot marimba arpeggio. Never loops while standing on a pad. */
   public playBounce(superBounce: boolean = false) {
     if (this.isMuted) return;
-    try {
-      this.initCtx();
-      if (!this.ctx || this.ctx.state !== 'running') return;
+    const notes = superBounce ? [392, 523.25, 783.99] : [329.63, 440, 587.33];
+    notes.forEach((freq, index) => {
+      setTimeout(() => this.playTone(freq, 0.16 + index * 0.055, 'sine', 0.045), index * 65);
+    });
+  }
 
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      const now = this.ctx.currentTime;
-
-      osc.type = superBounce ? 'sine' : 'triangle';
-      const baseFreq = superBounce ? 220 : 180;
-      const targetFreq = superBounce ? 880 : 680;
-      const duration = superBounce ? 0.35 : 0.25;
-
-      osc.frequency.setValueAtTime(baseFreq, now);
-      osc.frequency.exponentialRampToValueAtTime(targetFreq, now + duration);
-
-      gain.gain.setValueAtTime(superBounce ? 0.24 : 0.18, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start();
-      osc.stop(now + duration);
-
-      if (superBounce) {
-        // High crystalline shimmer tone for super bounce
-        setTimeout(() => this.playTone(1174.66, 0.28, 'sine', 0.12), 30);
-      }
-    } catch {}
+  public playSpecial(kind: 'heavy' | 'skill' | 'ultimate' | 'guard') {
+    if (this.isMuted) return;
+    if (kind === 'guard') { this.playTone(523, 0.17, 'sine', 0.065); return; }
+    const notes = kind === 'ultimate' ? [261.63, 392, 523.25, 783.99] :
+      kind === 'skill' ? [349.23, 523.25, 698.46] : [196, 293.66];
+    notes.forEach((freq, i) => setTimeout(() =>
+      this.playTone(freq, 0.18 + i * 0.035, 'triangle', kind === 'ultimate' ? 0.085 : 0.06), i * 50));
   }
 
   public playDash(chainCount: number = 1) {

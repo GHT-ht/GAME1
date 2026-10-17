@@ -27,6 +27,9 @@ import type {
 // ---------------------------------------------------------------------------
 export const SLASH_DAMAGE = 2;
 export const SPIN_DAMAGE = 3;
+export const HEAVY_DAMAGE = 5;
+export const SKILL_DAMAGE = 4;
+export const ULTIMATE_DAMAGE = 9;
 export const DASH_DAMAGE = 2;
 export const STOMP_DAMAGE = 3;
 export const BOSS_STOMP_DAMAGE = 2;
@@ -672,6 +675,16 @@ function emptyEvents(): CombatEvents {
 }
 
 export function slashHitbox(player: PlayerState): Rect {
+  if (player.attackKind === 'ultimate') {
+    return { x: player.x - 165, y: player.y - 110, w: player.w + 330, h: player.h + 220 };
+  }
+  if (player.attackKind === 'skill') {
+    return { x: player.x - 90, y: player.y - 36, w: player.w + 180, h: player.h + 72 };
+  }
+  if (player.attackKind === 'heavy') {
+    return { x: player.facing > 0 ? player.x + player.w - 8 : player.x - 80,
+      y: player.y - 18, w: 88, h: player.h + 36 };
+  }
   const spinning = player.attackIndex === 2;
   if (spinning) {
     const w = player.w + 76;
@@ -1177,12 +1190,19 @@ export function updateMonsters(
     }
 
     // Slash / spin
-    if (slashBox && rectsOverlap(slashBox, box)) {
-      const spinning = player.attackIndex === 2;
-      const dmg = spinning ? SPIN_DAMAGE : SLASH_DAMAGE;
+    if (slashBox && rectsOverlap(slashBox, box) && (player.attackKind === 'none' || m.lastPlayerSwingSerial !== player.attackSerial)) {
+      const spinning = (player.attackKind === 'light' || player.attackKind === 'none') && player.attackIndex === 2;
+      const dmg = player.attackKind === 'ultimate' ? ULTIMATE_DAMAGE :
+        player.attackKind === 'skill' ? SKILL_DAMAGE :
+        player.attackKind === 'heavy' ? HEAVY_DAMAGE :
+        spinning ? SPIN_DAMAGE : SLASH_DAMAGE;
       const dirX = player.facing;
       const result = damageMonster(m, dmg, dirX, 'slash', damageNumbers);
       if (result.damaged) {
+        if (player.attackKind !== 'none') m.lastPlayerSwingSerial = player.attackSerial;
+        // Rage grows only on confirmed hits, not on pressing a key into empty air.
+        if (player.attackKind !== 'ultimate') player.ultimateMeter = Math.min(100,
+          player.ultimateMeter + result.damage * 5 + (result.defeated ? 12 : 0));
         events.slashed = true;
         events.spinAttack = events.spinAttack || spinning;
         events.monstersHit.push(m);
@@ -1299,6 +1319,13 @@ function hurtPlayer(
   source: CombatEvents['hurtSource']
 ) {
   if (player.invulnerableTimer > 0 || player.isDashing) return;
+  if (player.guardTimer > 0) {
+    player.guardTimer = 0;
+    player.invulnerableTimer = 0.35;
+    player.ultimateMeter = Math.min(100, player.ultimateMeter + 10);
+    events.shake = Math.max(events.shake, 0.2);
+    return;
+  }
   player.health = Math.max(0, player.health - damage);
   player.invulnerableTimer = 1.2;
   player.vx = -dirX * PLAYER_KNOCKBACK_X;

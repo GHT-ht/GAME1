@@ -11,8 +11,11 @@ export const AIR_RESISTANCE = 0.94;
 export const JUMP_VELOCITY = -410;
 export const DOUBLE_JUMP_VELOCITY = -380;
 export const TRIPLE_JUMP_VELOCITY = -410;
-export const BOUNCE_PAD_VELOCITY = -740;
-export const SUPER_BOUNCE_PAD_VELOCITY = -860;
+// Charged booster: release after standing on the pad, NEVER on a mere overlap.
+export const BOUNCE_PAD_VELOCITY = -540;
+export const SUPER_BOUNCE_PAD_VELOCITY = -850;
+export const BOOSTER_CHARGE_TIME = 1.55;
+
 export const DASH_SPEED = 540;
 export const DASH_DURATION = 0.16; // seconds
 export const DASH_COOLDOWN = 0.14; // seconds (fast cooldown for fluid air chaining)
@@ -50,6 +53,18 @@ export function createInitialPlayer(spawnX: number, spawnY: number): PlayerState
     airDashesLeft: 3,
     maxAirDashes: 3,
     dashChainCount: 0,
+    boosterPadIndex: -1,
+    boosterCharge: 0,
+    boosterCharging: false,
+    boosterLaunchGrace: 0,
+    boosterFlight: false,
+    attackKind: 'none',
+    attackSerial: 0,
+    heavyCooldown: 0,
+    skillCooldown: 0,
+    ultimateMeter: 35,
+    guardTimer: 0,
+    guardCooldown: 0,
     health: 3,
     maxHealth: 3,
     invulnerableTimer: 0,
@@ -86,21 +101,53 @@ export function updatePlayerAttack(
   input: InputState,
   dt: number
 ): { slashed: boolean; spin: boolean; swingIndex: number } {
-  if (player.attackCooldown > 0) player.attackCooldown = Math.max(0, player.attackCooldown - dt);
-  if (player.attackTimer > 0) player.attackTimer = Math.max(0, player.attackTimer - dt);
+  player.attackCooldown = Math.max(0, player.attackCooldown - dt);
+  player.attackTimer = Math.max(0, player.attackTimer - dt);
+  player.heavyCooldown = Math.max(0, player.heavyCooldown - dt);
+  player.skillCooldown = Math.max(0, player.skillCooldown - dt);
+  player.guardCooldown = Math.max(0, player.guardCooldown - dt);
+  player.guardTimer = Math.max(0, player.guardTimer - dt);
+  if (player.attackTimer === 0) player.attackKind = 'none';
 
-  let slashed = false;
-  if (input.attackJustPressed && player.attackCooldown <= 0 && player.attackTimer <= 0) {
-    player.attackTimer = SLASH_DURATION;
-    player.attackCooldown = SLASH_COOLDOWN;
-    // -1 (no swing yet) -> 0 (first) -> 1 (second) -> 2 (spin) -> 0 ...
-    player.attackIndex = (player.attackIndex + 1) % 3;
-    slashed = true;
-    player.squashX = player.attackIndex === SPIN_SWING_INDEX ? 1.2 : 1.1;
-    player.squashY = player.attackIndex === SPIN_SWING_INDEX ? 0.9 : 0.95;
+  if (input.guardJustPressed && player.guardCooldown <= 0 && player.attackTimer <= 0) {
+    player.guardTimer = 0.7;
+    player.guardCooldown = 2.3;
   }
 
-  return { slashed, spin: player.attackIndex === SPIN_SWING_INDEX, swingIndex: player.attackIndex };
+  let slashed = false;
+  if (player.attackTimer <= 0 && player.guardTimer <= 0) {
+    if (input.ultimateJustPressed && player.ultimateMeter >= 100) {
+      player.attackKind = 'ultimate';
+      player.attackTimer = 0.42;
+      player.attackCooldown = 0.85;
+      player.ultimateMeter = 0;
+      slashed = true;
+    } else if (input.skillJustPressed && player.skillCooldown <= 0) {
+      player.attackKind = 'skill';
+      player.attackTimer = 0.30;
+      player.attackCooldown = 0.42;
+      player.skillCooldown = 3.5;
+      slashed = true;
+    } else if (input.heavyJustPressed && player.heavyCooldown <= 0) {
+      player.attackKind = 'heavy';
+      player.attackTimer = 0.27;
+      player.attackCooldown = 0.48;
+      player.heavyCooldown = 0.72;
+      slashed = true;
+    } else if (input.attackJustPressed && player.attackCooldown <= 0) {
+      player.attackKind = 'light';
+      player.attackTimer = SLASH_DURATION;
+      player.attackCooldown = SLASH_COOLDOWN;
+      player.attackIndex = (player.attackIndex + 1) % 3;
+      slashed = true;
+    }
+    if (slashed) {
+      player.attackSerial += 1;
+      player.squashX = player.attackKind === 'light' ? 1.12 : 1.3;
+      player.squashY = player.attackKind === 'light' ? 0.95 : 0.82;
+    }
+  }
+  return { slashed, spin: player.attackKind === 'light' && player.attackIndex === SPIN_SWING_INDEX, swingIndex: player.attackIndex };
 }
 
 export function rectIntersect(r1: Rect, r2: Rect): boolean {
@@ -121,6 +168,10 @@ export interface InputState {
   jumpHeld: boolean;
   dashJustPressed: boolean;
   attackJustPressed?: boolean;
+  heavyJustPressed?: boolean;
+  skillJustPressed?: boolean;
+  ultimateJustPressed?: boolean;
+  guardJustPressed?: boolean;
 }
 
 export interface PhysicsEvents {
@@ -144,6 +195,7 @@ export interface PhysicsEvents {
   swingIndex: number;
   /** HP restored by a dropped heart. */
   healed: boolean;
+  guardStarted: boolean;
 }
 
 export function updatePlayerPhysics(
@@ -172,13 +224,47 @@ export function updatePlayerPhysics(
     spinAttack: false,
     swingIndex: player.attackIndex ?? 0,
     healed: false,
+    guardStarted: false,
   };
 
   // Clamp dt to avoid physics tunnelling
   const stepDt = Math.min(dt, 0.05);
+  player.boosterLaunchGrace = Math.max(0, player.boosterLaunchGrace - stepDt);
+  // A booster is a stable, one-way platform. Charge while held, launch on release.
+  // Charge starts only when already landed: a held jump during landing is fine.
+  const onBooster = player.grounded && player.boosterPadIndex >= 0;
+  const chargeHeld = Boolean(input.up || input.jumpHeld);
+  let releasedBooster = false;
+  if (onBooster) {
+    if (chargeHeld) {
+      player.boosterCharging = true;
+      player.boosterCharge = Math.min(1, player.boosterCharge + stepDt / BOOSTER_CHARGE_TIME);
+    } else if (player.boosterCharging) {
+      const strength = Math.max(0.1, player.boosterCharge);
+      // Ease-in gives a meaningful difference between tapping and a full charge.
+      player.vy = BOUNCE_PAD_VELOCITY + (SUPER_BOUNCE_PAD_VELOCITY - BOUNCE_PAD_VELOCITY) * Math.pow(strength, 0.82);
+      player.grounded = false;
+      player.coyoteTimer = 0;
+      player.jumpBufferTimer = 0;
+      player.jumpsLeft = player.maxJumps;
+      player.airDashesLeft = player.maxAirDashes;
+      player.boosterLaunchGrace = 0.32;
+      player.boosterFlight = true;
+      player.boosterPadIndex = -1;
+      player.boosterCharge = 0;
+      player.boosterCharging = false;
+      events.bounced = true;
+      events.superBounced = strength >= 0.7;
+      player.squashX = 0.78;
+      player.squashY = 1.3;
+      releasedBooster = true;
+    }
+  }
 
   // Melee swing state machine (3-hit combo, 3rd swing is a spin)
+  const wasGuarding = player.guardTimer > 0;
   const swing = updatePlayerAttack(player, input, stepDt);
+  events.guardStarted = !wasGuarding && player.guardTimer > 0;
   if (swing.slashed) {
     events.slashed = true;
     events.spinAttack = swing.spin;
@@ -201,7 +287,7 @@ export function updatePlayerPhysics(
     player.coyoteTimer = Math.max(0, player.coyoteTimer - stepDt);
   }
 
-  if (input.jumpJustPressed) {
+  if (input.jumpJustPressed && !onBooster && !releasedBooster) {
     player.jumpBufferTimer = JUMP_BUFFER_TIME;
   } else {
     player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - stepDt);
@@ -209,7 +295,7 @@ export function updatePlayerPhysics(
 
   // Dash initiation: can dash on ground or in air with continuous chained bursts
   const canDash = player.dashCooldown <= 0 && !player.isDashing && (player.grounded || (player.airDashesLeft ?? 3) > 0);
-  if (input.dashJustPressed && canDash) {
+  if (input.dashJustPressed && canDash && !onBooster) {
     player.isDashing = true;
     player.dashTimer = DASH_DURATION;
     player.dashCooldown = DASH_COOLDOWN;
@@ -269,7 +355,7 @@ export function updatePlayerPhysics(
     }
 
     // Gliding check: in air, falling, holding jump
-    const canGlide = !player.grounded && player.vy > 0 && input.jumpHeld;
+    const canGlide = !player.grounded && player.vy > 0 && input.jumpHeld && player.boosterLaunchGrace <= 0;
     if (canGlide && !player.isGliding) {
       events.glidingStarted = true;
     }
@@ -285,12 +371,14 @@ export function updatePlayerPhysics(
     }
 
     // Variable jump cut: release jump while ascending
-    if (!input.jumpHeld && player.vy < -50) {
+    if (!input.jumpHeld && player.vy < -50 && !player.boosterFlight) {
       player.vy *= 0.55;
     }
 
+    if (player.vy >= 0) player.boosterFlight = false;
+
     // Jump handling with Coyote Time, Buffering, and Triple Jump
-    if (player.jumpBufferTimer > 0) {
+    if (player.jumpBufferTimer > 0 && !onBooster && !releasedBooster) {
       if (player.coyoteTimer > 0) {
         // 1st Stage: Ground / Coyote Jump
         player.vy = JUMP_VELOCITY;
@@ -400,29 +488,32 @@ export function updatePlayerPhysics(
         }
       }
     } else if (plat.type === 'bouncy') {
-      // Spring Booster Pad (Tiki Drum / Trampoline): Effortless, reliable launch!
-      // Generous bounding box detection: whether walking, falling, or landing onto the pad
-      const overPadX = (player.x + player.w >= plat.x - 6) && (player.x <= plat.x + plat.w + 6);
-      const touchingPadY = (player.y + player.h >= plat.y - 10) && (player.y <= plat.y + plat.h + 16);
-
-      if (overPadX && touchingPadY) {
-        // Generous super boost if jump is pressed or held
-        const isSuperBounce = input.jumpJustPressed || input.jumpHeld;
-        const launchVelocity = isSuperBounce ? SUPER_BOUNCE_PAD_VELOCITY : BOUNCE_PAD_VELOCITY;
-
+      // LANDING ONLY: no repeated bounce, no edge/underside triggering.
+      const crossesTop = player.vy >= 0 && prevY + player.h <= plat.y + 14 &&
+        player.y + player.h >= plat.y && player.x + player.w > plat.x + 5 &&
+        player.x < plat.x + plat.w - 5;
+      if (crossesTop) {
         player.y = plat.y - player.h;
-        player.vy = launchVelocity;
-        player.grounded = false;
-        player.jumpsLeft = player.maxJumps ?? 3;
-        player.canDoubleJump = true;
-        player.airDashesLeft = player.maxAirDashes ?? 3;
-        player.dashCooldown = 0;
-        events.bounced = true;
-        events.superBounced = isSuperBounce;
-        player.squashX = isSuperBounce ? 0.6 : 0.72;
-        player.squashY = isSuperBounce ? 1.45 : 1.35;
+        player.vy = 0;
+        player.grounded = true;
+        const padIndex = platforms.indexOf(plat);
+        if (player.boosterPadIndex !== padIndex) {
+          player.boosterCharge = 0;
+          player.boosterCharging = false;
+        }
+        player.boosterPadIndex = padIndex;
+        if (!wasGrounded) events.landed = true;
+        // On this platform, pressing jump means CHARGE, not ordinary jump.
+        player.jumpBufferTimer = 0;
       }
     }
+  }
+
+  // Leaving a booster horizontally cancels charge instead of launching randomly.
+  if (!player.grounded || releasedBooster) {
+    player.boosterPadIndex = -1;
+    player.boosterCharge = 0;
+    player.boosterCharging = false;
   }
 
   // Damping squash and stretch back to 1.0
@@ -431,6 +522,7 @@ export function updatePlayerPhysics(
 
   // Track safe platform position when grounded
   if (player.grounded) {
+    player.boosterFlight = false;
     player.lastSafeX = player.x;
     player.lastSafeY = player.y;
   }
